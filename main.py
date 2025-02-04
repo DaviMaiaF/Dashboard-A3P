@@ -110,57 +110,57 @@ with col2:
 st.markdown("<br><br>", unsafe_allow_html=True) # Dá o espaço de duas linhas
 
 # Segunda linha: Mapa e Gráfico de Linha com um espaço no meio
-col3, espaco2, col4 = st.columns([15, 1, 15]) # 6: largura do gráfico, 0.5: largura do espaço
+col3, espaco2, col4 = st.columns([15, 5, 15]) # 6: largura do gráfico, 0.5: largura do espaço
 
 with col3:
-    # Mapa do Brasil (ATUALIZADO)
     st.subheader("Mapa de Adesões por Estado")
-    brazil_geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
-    state_data = data.groupby("UF").size().reset_index(name="Total")
 
-    # Verificar siglas válidas
-    valid_ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE",
-                 "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
-    state_data["UF"] = state_data["UF"].str.upper().str.strip()
-    state_data = state_data[state_data["UF"].isin(valid_ufs)]
+    # Criar colunas dentro de col3 para dividir o espaço do mapa e da seleção
+    mapa_col, filtro_col = st.columns([5, 3])  # 75% mapa, 25% seleção
 
-    if not state_data.empty:
-        fig_mapa = px.choropleth(
-            state_data,
-            geojson=brazil_geojson_url,
-            locations="UF",
-            featureidkey="properties.sigla",
-            color="Total",
-            color_continuous_scale="Blues",
-            scope="south america",
-            title="Adesões por Estado no Brasil",
-            labels={"Total": "Número de Adesões"},
-            custom_data=["UF"],
-            height=800,
-            width=1300
-        )
-        fig_mapa.update_geos(center={"lat": -14.2350, "lon": -51.9253}, projection_scale=4)
+    with mapa_col:
+        brazil_geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+        state_data = data.groupby("UF").size().reset_index(name="Total")
 
-        # 👇 Remover completamente a barra de cores
-        fig_mapa.update_traces(showscale=False)  # Remove a barra de cores
-        fig_mapa.update_layout(coloraxis_showscale=False)  # Garante que a escala de cores não seja exibida
+        valid_ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
+                     "PE",
+                     "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
+        state_data["UF"] = state_data["UF"].str.upper().str.strip()
+        state_data = state_data[state_data["UF"].isin(valid_ufs)]
 
-        # Exibir o mapa
-        st.plotly_chart(fig_mapa, use_container_width=True)
+        if not state_data.empty:
+            fig_mapa = px.choropleth(
+                state_data,
+                geojson=brazil_geojson_url,
+                locations="UF",
+                featureidkey="properties.sigla",
+                color="Total",
+                color_continuous_scale="Blues",
+                scope="south america",
+                title="Adesões por Estado",
+                labels={"Total": "Número de Adesões"},
+                custom_data=["UF"],
+                height=600,
+                width=1000
+            )
+            fig_mapa.update_geos(center={"lat": -14.2350, "lon": -51.9253}, projection_scale=4)
+            fig_mapa.update_traces(showscale=False)
+            fig_mapa.update_layout(coloraxis_showscale=False)
 
-        # Capturar o estado clicado manualmente
+            st.plotly_chart(fig_mapa, use_container_width=True)
+
+    with filtro_col:
         if "map_click_data" not in st.session_state:
             st.session_state["map_click_data"] = None
 
-        # Botão para selecionar estado manualmente (FILTRO PERMANECE)
         estado_selecionado = st.selectbox("Selecione um estado", valid_ufs, index=0)
         if st.button("Aplicar seleção"):
             st.session_state["map_click_data"] = estado_selecionado
-    else:
-        st.warning("Nenhum dado válido para exibir o mapa.")
+            st.success(f"Estado: {estado_selecionado}")
 
 with espaco2:
     st.write("") # Coluna fantasma
+    st.write("")
 
 with col4:
     # Gráfico de Linha - Evolução Diária (ATUALIZADO)
