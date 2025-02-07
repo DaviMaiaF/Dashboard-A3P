@@ -110,10 +110,13 @@ with col2:
 st.markdown("<br><br>", unsafe_allow_html=True) # Dá o espaço de duas linhas
 
 # Segunda linha: Mapa e Gráfico de Linha com um espaço no meio
-col3, espaco2, col4 = st.columns([15, 5, 15]) # 6: largura do gráfico, 0.5: largura do espaço
+col3, espaco2, col4 = st.columns([15, 5, 15]) # 15: largura do gráfico, 5: largura do espaço
 
 with col3:
-    st.subheader("Mapa de Adesões por Estado")
+    # Reduzir o espaço aciam do título do mapa
+    st.markdown("<div style='margin-top: -20px;'></div>", unsafe_allow_html=True)
+
+    st.subheader("Mapa de Adesões")
 
     # Criar colunas dentro de col3 para dividir o espaço do mapa e da seleção
     mapa_col, filtro_col = st.columns([5, 3])  # 75% mapa, 25% seleção
@@ -140,16 +143,19 @@ with col3:
                 title="Adesões por Estado",
                 labels={"Total": "Número de Adesões"},
                 custom_data=["UF"],
-                height=600,
-                width=1000
+                height=500,
+                width=900
             )
-            fig_mapa.update_geos(center={"lat": -14.2350, "lon": -51.9253}, projection_scale=4)
+            fig_mapa.update_geos(center={"lat": -14.2350, "lon": -51.9253}, projection_scale=1.6)
             fig_mapa.update_traces(showscale=False)
             fig_mapa.update_layout(coloraxis_showscale=False)
 
             st.plotly_chart(fig_mapa, use_container_width=True)
 
     with filtro_col:
+        # Adiciona espaço extra acima do filtro para descer ele um pouco
+        st.markdown("<br><br>", unsafe_allow_html=True)
+
         if "map_click_data" not in st.session_state:
             st.session_state["map_click_data"] = None
 
@@ -164,7 +170,7 @@ with espaco2:
 
 with col4:
     # Gráfico de Linha - Evolução Diária (ATUALIZADO)
-    st.subheader("Evolução das Adesões até Hoje")
+    st.subheader("Evolução das Adesões")
 
     # Usar data de INÍCIO da vigência para a evolução
     data["Data"] = pd.to_datetime(data["Início da Vigência"], errors="coerce").dt.date
