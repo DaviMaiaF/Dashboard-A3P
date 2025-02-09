@@ -8,7 +8,7 @@ def load_data(file, sheet_name):
     return pd.read_excel(file, sheet_name=sheet_name)
 
 # Streamlit - Interface do Dashboard
-st.title("Dashboard - Análise de Adesões à A3P")
+st.markdown("<h1 style='text-align: center;'>Análise de Adesões à A3P</h1>", unsafe_allow_html=True)
 
 # Nome da aba fixa e arquivo
 sheet_name = "Adesões à A3P"
@@ -63,19 +63,20 @@ st.sidebar.dataframe(
 )
 
 # Gráficos em uma estrutura de linhas e colunas
-st.header("Visualizações Principais:")
+st.header("Gráficos Principais:")
 
 # Primeira linha: Gráfico de Pizza e Gráfico de Barras Horizontais com uma coluna invisível no meio
-col1, espaco1,  col2 = st.columns([6, 0.5, 6]) # 6: Largura do gráfico, 0.5: largura do espaço
+col1, espaco1,  col2 = st.columns([10, 0.5, 10]) # 6: Largura do gráfico, 0.5: largura do espaço
 with col1:
     # Gráfico de Pizza
     fig_pizza = px.pie(
         grouped_data,
         values="Total",
         names="Esfera",
-        title="Distribuição Percentual de Adesões por Esfera",
+        title="Percentual de Adesões por Esfera",
         hole=0.4,
-        height=400
+        height=550,
+        width=800
     )
     fig_pizza.update_traces(textfont=dict(size=14))
     fig_pizza.update_layout(title=dict(font=dict(size=20)), legend=dict(font=dict(size=14)))
@@ -94,9 +95,10 @@ with col2:
         y="Esfera",
         orientation="h",
         text="Total",
-        title=f"Esferas para o Poder {selected_power}",
+        title=f"Esferas do Poder {selected_power}",
         labels={"Total": "Quantidade", "Esfera": "Esfera"},
-        height=400
+        height=550,
+        width=800
     )
     fig_barra.update_traces(textposition="outside", textfont=dict(size=14))
     fig_barra.update_layout(
@@ -110,7 +112,7 @@ with col2:
 st.markdown("<br><br>", unsafe_allow_html=True) # Dá o espaço de duas linhas
 
 # Segunda linha: Mapa e Gráfico de Linha com um espaço no meio
-col3, espaco2, col4 = st.columns([15, 5, 15]) # 15: largura do gráfico, 5: largura do espaço
+col3, espaco2, col4 = st.columns([18, 2, 18]) # 15: largura do gráfico, 5: largura do espaço
 
 with col3:
     # Reduzir o espaço aciam do título do mapa
@@ -219,7 +221,8 @@ with col4:
         title=f"Evolução das Adesões até {today}",
         markers=True,
         labels={"Total": "Adesões", "Data": "Data"},
-        height=500
+        height=550,
+        width=1200
     )
     fig_linha.update_xaxes(range=[min_date, today])
     st.plotly_chart(fig_linha, use_container_width=True)
