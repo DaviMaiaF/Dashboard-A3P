@@ -171,58 +171,57 @@ with espaco2:
     st.write("")
 
 with col4:
-    # Gráfico de Linha - Evolução Diária (ATUALIZADO)
-    st.subheader("Evolução das Adesões")
+    # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo
+    st.subheader("Adesões Vigentes ao Longo do Tempo")
 
-    # Usar data de INÍCIO da vigência para a evolução
-    data["Data"] = pd.to_datetime(data["Início da Vigência"], errors="coerce").dt.date
+    # Converter colunas de datas
+    data["Início da Vigência"] = pd.to_datetime(data["Início da Vigência"], errors="coerce")
+    data["Final da Vigência"] = pd.to_datetime(data["Final da Vigência"], errors="coerce")
 
-    today = pd.Timestamp.today().date()
-    filtered_data = data.dropna(subset=["Data"]).query("Data <= @today")
+    # Filtrar dados válidos
+    filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"])
 
-    # Filtrar por estado clicado (se houver)
-    if st.session_state.get("map_click_data"):
-        estado_selecionado = st.session_state["map_click_data"]
-        filtered_data = filtered_data[filtered_data["UF"] == estado_selecionado]
-        st.write(f"Mostrando dados para o estado: *{estado_selecionado}*")
-
-    # Verificar se há dados
-    if filtered_data.empty:
-        st.warning("Não há dados históricos disponíveis.")
-        st.stop()
-
-    daily_data = filtered_data.groupby("Data").size().reset_index(name="Total")
-
-    # Definir limites do slider corretamente
-    min_date = daily_data["Data"].min()
-    max_date = daily_data["Data"].max()
-
-    # Criar slider
-    selected_dates = st.sidebar.date_input(
-        "Selecione o intervalo de datas",
-        value=[min_date, max_date],
-        min_value=min_date,
-        max_value=max_date
+    # Criar um intervalo de datas para análise
+    date_range = pd.date_range(
+        start=filtered_data["Início da Vigência"].min(),
+        end=filtered_data["Final da Vigência"].max(),
+        freq='D'  # Frequência diária
     )
 
-    # Filtrar dados pelo intervalo de datas
-    if len(selected_dates) == 2:
-        filtered_daily_data = daily_data[
-            (daily_data["Data"] >= selected_dates[0]) & (daily_data["Data"] <= selected_dates[1])
-            ]
-    else:
-        filtered_daily_data = daily_data
+    # Calcular adesões vigentes para cada dia
+    vigentes_por_dia = []
+    for dia in date_range:
+        # Contar quantas adesões estão vigentes naquele dia
+        vigentes = filtered_data[
+            (filtered_data["Início da Vigência"] <= dia) & (filtered_data["Final da Vigência"] >= dia)
+        ].shape[0]
+        vigentes_por_dia.append(vigentes)
+
+    # Criar um DataFrame com os resultados
+    vigentes_df = pd.DataFrame({
+        "Data": date_range,
+        "Adesões Vigentes": vigentes_por_dia
+    })
+
+    # Agrupar por trimestre (opcional)
+    vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').mean().reset_index()
 
     # Gráfico de Linha
     fig_linha = px.line(
-        filtered_daily_data,
+        vigentes_por_trimestre,
         x="Data",
-        y="Total",
-        title=f"Evolução das Adesões até {today}",
+        y="Adesões Vigentes",
+        title="Adesões Vigentes ao Longo do Tempo",
         markers=True,
-        labels={"Total": "Adesões", "Data": "Data"},
+        labels={"Adesões Vigentes": "Adesões Vigentes", "Data": "Data"},
         height=550,
         width=1200
     )
-    fig_linha.update_xaxes(range=[min_date, today])
+    fig_linha.update_xaxes(title_text="Data")
+    fig_linha.update_layout(
+        title=dict(font=dict(size=20)),
+        xaxis=dict(title_font=dict(size=16), tickfont=dict(size=14)),
+        yaxis=dict(title_font=dict(size=16), tickfont=dict(size=14)),
+        legend=dict(font=dict(size=14))
+    )
     st.plotly_chart(fig_linha, use_container_width=True)
