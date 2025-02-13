@@ -5,7 +5,7 @@ import plotly.express as px
 # Função para carregar os dados
 @st.cache_data
 def load_data(file, sheet_name):
-    return pd.read_excel(file, sheet_name=sheet_name)
+    return pd.read_excel(file, sheet_name=sheet_name, skipfooter=2)  # Ignora linhas extras no final
 
 # Streamlit - Interface do Dashboard
 st.markdown("<h1 style='text-align: center;'>Análise de Adesões à A3P</h1>", unsafe_allow_html=True)
@@ -30,7 +30,13 @@ if not all(column in data.columns for column in required_columns):
     st.error(f"As colunas necessárias {required_columns} não foram encontradas nos dados. Verifique o arquivo e tente novamente.")
     st.stop()
 
-# Adicionar após a validação das colunas
+# Remover duplicatas
+data = data.drop_duplicates()
+
+# Padronizar textos para evitar dupla contagem
+data['Esfera'] = data['Esfera'].str.strip().str.title()
+data['Poder'] = data['Poder'].str.strip().str.title()
+
 # Converter colunas de datas
 data['Início da Vigência'] = pd.to_datetime(data['Início da Vigência'], errors='coerce')
 data['Final da Vigência'] = pd.to_datetime(data['Final da Vigência'], errors='coerce')
@@ -66,7 +72,7 @@ st.sidebar.dataframe(
 st.header("Gráficos Principais:")
 
 # Primeira linha: Gráfico de Pizza e Gráfico de Barras Horizontais com uma coluna invisível no meio
-col1, espaco1,  col2 = st.columns([10, 0.5, 10]) # 6: Largura do gráfico, 0.5: largura do espaço
+col1, espaco1, col2 = st.columns([10, 0.5, 10])  # 6: Largura do gráfico, 0.5: largura do espaço
 with col1:
     # Gráfico de Pizza
     fig_pizza = px.pie(
@@ -83,7 +89,7 @@ with col1:
     st.plotly_chart(fig_pizza, use_container_width=True)
 
 with espaco1:
-    st.write("") #Coluna Fantasma
+    st.write("")  # Coluna Fantasma
 
 with col2:
     # Gráfico de Barras Horizontais por Poder
@@ -109,13 +115,13 @@ with col2:
     st.plotly_chart(fig_barra, use_container_width=True)
 
 # Adicionar espaço entre as linhas
-st.markdown("<br><br>", unsafe_allow_html=True) # Dá o espaço de duas linhas
+st.markdown("<br><br>", unsafe_allow_html=True)  # Dá o espaço de duas linhas
 
 # Segunda linha: Mapa e Gráfico de Linha com um espaço no meio
-col3, espaco2, col4 = st.columns([18, 2, 18]) # 15: largura do gráfico, 5: largura do espaço
+col3, espaco2, col4 = st.columns([18, 2, 18])  # 15: largura do gráfico, 5: largura do espaço
 
 with col3:
-    # Reduzir o espaço aciam do título do mapa
+    # Reduzir o espaço acima do título do mapa
     st.markdown("<div style='margin-top: -20px;'></div>", unsafe_allow_html=True)
 
     st.subheader("Mapa de Adesões")
@@ -167,61 +173,51 @@ with col3:
             st.success(f"Estado: {estado_selecionado}")
 
 with espaco2:
-    st.write("") # Coluna fantasma
+    st.write("")  # Coluna fantasma
     st.write("")
 
 with col4:
-    # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo
-    st.subheader("Adesões Vigentes ao Longo do Tempo")
+    # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo (Até Hoje)
+    st.subheader("Adesões Vigentes ao Longo do Tempo (Até Hoje)")
 
-    # Converter colunas de datas
-    data["Início da Vigência"] = pd.to_datetime(data["Início da Vigência"], errors="coerce")
-    data["Final da Vigência"] = pd.to_datetime(data["Final da Vigência"], errors="coerce")
+    # Filtrar dados válidos e ajustar "Final da Vigência" para hoje se for futuro
+    filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"]).copy()
 
-    # Filtrar dados válidos
-    filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"])
-
-    # Criar um intervalo de datas para análise
-    date_range = pd.date_range(
-        start=filtered_data["Início da Vigência"].min(),
-        end=filtered_data["Final da Vigência"].max(),
-        freq='D'  # Frequência diária
+    # Ajustar "Final da Vigência" para não ultrapassar hoje
+    filtered_data["Final da Vigência"] = filtered_data["Final da Vigência"].apply(
+        lambda x: min(x, hoje)  # Cap final date at today
     )
 
-    # Calcular adesões vigentes para cada dia
+    # Criar intervalo de datas até hoje
+    date_range = pd.date_range(
+        start=filtered_data["Início da Vigência"].min(),
+        end=hoje,
+        freq='D'
+    )
+
+    # Calcular adesões vigentes por dia
     vigentes_por_dia = []
     for dia in date_range:
-        # Contar quantas adesões estão vigentes naquele dia
+        # Contar apenas as adesões que estavam vigentes naquele dia
         vigentes = filtered_data[
-            (filtered_data["Início da Vigência"] <= dia) & (filtered_data["Final da Vigência"] >= dia)
-        ].shape[0]
+            (filtered_data["Início da Vigência"] <= dia) &
+            (filtered_data["Final da Vigência"] >= dia)
+            ].shape[0]
         vigentes_por_dia.append(vigentes)
 
-    # Criar um DataFrame com os resultados
-    vigentes_df = pd.DataFrame({
-        "Data": date_range,
-        "Adesões Vigentes": vigentes_por_dia
-    })
+    vigentes_df = pd.DataFrame({"Data": date_range, "Adesões Vigentes": vigentes_por_dia})
 
-    # Agrupar por trimestre (opcional)
-    vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').mean().reset_index()
+    # Agrupar por trimestre usando o MÁXIMO de adesões vigentes no trimestre
+    vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').max().reset_index()
 
     # Gráfico de Linha
     fig_linha = px.line(
         vigentes_por_trimestre,
         x="Data",
         y="Adesões Vigentes",
-        title="Adesões Vigentes ao Longo do Tempo",
+        title=f"Adesões Vigentes até {hoje.strftime('%d/%m/%Y')}",
         markers=True,
-        labels={"Adesões Vigentes": "Adesões Vigentes", "Data": "Data"},
-        height=550,
-        width=1200
-    )
-    fig_linha.update_xaxes(title_text="Data")
-    fig_linha.update_layout(
-        title=dict(font=dict(size=20)),
-        xaxis=dict(title_font=dict(size=16), tickfont=dict(size=14)),
-        yaxis=dict(title_font=dict(size=16), tickfont=dict(size=14)),
-        legend=dict(font=dict(size=14))
+        labels={"Adesões Vigentes": "Adesões Vigentes"},
+        height=550
     )
     st.plotly_chart(fig_linha, use_container_width=True)
