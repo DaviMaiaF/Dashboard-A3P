@@ -118,7 +118,7 @@ with col2:
 st.markdown("<br><br>", unsafe_allow_html=True)  # Dá o espaço de duas linhas
 
 # Segunda linha: Mapa e Gráfico de Linha com um espaço no meio
-col3, espaco2, col4 = st.columns([18, 2, 18])  # 15: largura do gráfico, 5: largura do espaço
+col3, espaco2, col4 = st.columns([24, 2, 14])  # 15: largura do gráfico, 5: largura do espaço
 
 with col3:
     # Reduzir o espaço acima do título do mapa
@@ -127,42 +127,59 @@ with col3:
     st.subheader("Mapa de Adesões")
 
     # Criar colunas dentro de col3 para dividir o espaço do mapa e da seleção
-    mapa_col, filtro_col = st.columns([5, 3])  # 75% mapa, 25% seleção
+    mapa_col, filtro_col = st.columns([4, 1])  # 75% mapa, 25% seleção
 
     with mapa_col:
         brazil_geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
         state_data = data.groupby("UF").size().reset_index(name="Total")
 
         valid_ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
-                     "PE",
-                     "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
+                     "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
         state_data["UF"] = state_data["UF"].str.upper().str.strip()
         state_data = state_data[state_data["UF"].isin(valid_ufs)]
 
+        # Adicionar lógica de desempenho (exemplo: comparar com a média)
+        media_adesoes = state_data["Total"].mean()
+        state_data["Desempenho"] = state_data["Total"].apply(
+            lambda x: "Alto" if x > media_adesoes * 1.2 else "Médio" if x > media_adesoes * 0.8 else "Baixo"
+        )
+
         if not state_data.empty:
+            # Definir cores com base no desempenho
+            color_scale = {
+                "Alto": "green",
+                "Médio": "orange",
+                "Baixo": "red"
+            }
+            state_data["Cor"] = state_data["Desempenho"].map(color_scale)
+
             fig_mapa = px.choropleth(
                 state_data,
                 geojson=brazil_geojson_url,
                 locations="UF",
                 featureidkey="properties.sigla",
-                color="Total",
-                color_continuous_scale="Blues",
+                color="Desempenho",  # Usar a coluna de desempenho para as cores
+                color_discrete_map=color_scale,  # Mapear desempenho para cores
                 scope="south america",
-                title="Adesões por Estado",
-                labels={"Total": "Número de Adesões"},
-                custom_data=["UF"],
-                height=500,
-                width=900
+                title="Adesões por Estado (Desempenho)",
+                labels={"Total": "Número de Adesões", "Desempenho": "Desempenho"},
+                custom_data=["UF", "Total"],
+                height=600,  # Aumentar a altura do gráfico
+                width=1200  # Aumentar a largura do gráfico
             )
             fig_mapa.update_geos(center={"lat": -14.2350, "lon": -51.9253}, projection_scale=1.6)
             fig_mapa.update_traces(showscale=False)
             fig_mapa.update_layout(coloraxis_showscale=False)
 
-            st.plotly_chart(fig_mapa, use_container_width=True)
+            st.plotly_chart(fig_mapa, use_container_width=True)  # Ocupar toda a largura da coluna
 
-    with filtro_col:
-        # Adiciona espaço extra acima do filtro para descer ele um pouco
-        st.markdown("<br><br>", unsafe_allow_html=True)
+    with espaco2:
+        st.write("")  # Coluna fantasma
+        st.write("")
+
+    with col4:
+        # Adicionar o filtro de seleção de estado aqui
+        st.subheader("Filtro de Estado")
 
         if "map_click_data" not in st.session_state:
             st.session_state["map_click_data"] = None
@@ -170,54 +187,53 @@ with col3:
         estado_selecionado = st.selectbox("Selecione um estado", valid_ufs, index=0)
         if st.button("Aplicar seleção"):
             st.session_state["map_click_data"] = estado_selecionado
-            st.success(f"Estado: {estado_selecionado}")
+            st.success(f"Estado selecionado: {estado_selecionado}")
 
-with espaco2:
-    st.write("")  # Coluna fantasma
-    st.write("")
+        # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo (Até Hoje)
+        st.subheader("Adesões Vigentes ao Longo do Tempo (Até Hoje)")
 
-with col4:
-    # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo (Até Hoje)
-    st.subheader("Adesões Vigentes ao Longo do Tempo (Até Hoje)")
+        # Filtrar dados válidos e ajustar "Final da Vigência" para hoje se for futuro
+        filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"]).copy()
 
-    # Filtrar dados válidos e ajustar "Final da Vigência" para hoje se for futuro
-    filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"]).copy()
+        # Aplicar filtro de estado, se um estado foi selecionado
+        if st.session_state["map_click_data"]:
+            filtered_data = filtered_data[filtered_data["UF"] == st.session_state["map_click_data"]]
 
-    # Ajustar "Final da Vigência" para não ultrapassar hoje
-    filtered_data["Final da Vigência"] = filtered_data["Final da Vigência"].apply(
-        lambda x: min(x, hoje)  # Cap final date at today
-    )
+        # Ajustar "Final da Vigência" para não ultrapassar hoje
+        filtered_data["Final da Vigência"] = filtered_data["Final da Vigência"].apply(
+            lambda x: min(x, hoje)  # Cap final date at today
+        )
 
-    # Criar intervalo de datas até hoje
-    date_range = pd.date_range(
-        start=filtered_data["Início da Vigência"].min(),
-        end=hoje,
-        freq='D'
-    )
+        # Criar intervalo de datas até hoje
+        date_range = pd.date_range(
+            start=filtered_data["Início da Vigência"].min(),
+            end=hoje,
+            freq='D'
+        )
 
-    # Calcular adesões vigentes por dia
-    vigentes_por_dia = []
-    for dia in date_range:
-        # Contar apenas as adesões que estavam vigentes naquele dia
-        vigentes = filtered_data[
-            (filtered_data["Início da Vigência"] <= dia) &
-            (filtered_data["Final da Vigência"] >= dia)
-            ].shape[0]
-        vigentes_por_dia.append(vigentes)
+        # Calcular adesões vigentes por dia
+        vigentes_por_dia = []
+        for dia in date_range:
+            # Contar apenas as adesões que estavam vigentes naquele dia
+            vigentes = filtered_data[
+                (filtered_data["Início da Vigência"] <= dia) &
+                (filtered_data["Final da Vigência"] >= dia)
+                ].shape[0]
+            vigentes_por_dia.append(vigentes)
 
-    vigentes_df = pd.DataFrame({"Data": date_range, "Adesões Vigentes": vigentes_por_dia})
+        vigentes_df = pd.DataFrame({"Data": date_range, "Adesões Vigentes": vigentes_por_dia})
 
-    # Agrupar por trimestre usando o MÁXIMO de adesões vigentes no trimestre
-    vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').max().reset_index()
+        # Agrupar por trimestre usando o MÁXIMO de adesões vigentes no trimestre
+        vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').max().reset_index()
 
-    # Gráfico de Linha
-    fig_linha = px.line(
-        vigentes_por_trimestre,
-        x="Data",
-        y="Adesões Vigentes",
-        title=f"Adesões Vigentes até {hoje.strftime('%d/%m/%Y')}",
-        markers=True,
-        labels={"Adesões Vigentes": "Adesões Vigentes"},
-        height=550
-    )
-    st.plotly_chart(fig_linha, use_container_width=True)
+        # Gráfico de Linha
+        fig_linha = px.line(
+            vigentes_por_trimestre,
+            x="Data",
+            y="Adesões Vigentes",
+            title=f"Adesões Vigentes até {hoje.strftime('%d/%m/%Y')} - Estado: {st.session_state['map_click_data']}",
+            markers=True,
+            labels={"Adesões Vigentes": "Adesões Vigentes"},
+            height=550
+        )
+        st.plotly_chart(fig_linha, use_container_width=True)
