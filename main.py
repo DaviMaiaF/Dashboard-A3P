@@ -1,326 +1,224 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 
-# Configurar a página com o ícone
+# ============================
+# Configuração da Página
+# ============================
 st.set_page_config(
-    page_title="Análise de Adesões à A3P",
-    page_icon="images/Logo-a3p-fundo.png"  # Caminho relativo para o ícone
+    page_title="Dashboard A3P",
+    layout="wide",
+    page_icon="images/Logo-a3p-fundo.png"
 )
 
-# Inicializar o estado selecionado
-if "map_click_data" not in st.session_state:
-    st.session_state["map_click_data"] = None
+st.markdown("<h1 style='text-align: center;'>Dashboard de Adesões à A3P</h1>", unsafe_allow_html=True)
 
-# Função para carregar os dados
+# ============================
+# Função para carregar dados
+# ============================
 @st.cache_data
+
 def load_data(file, sheet_name):
-    return pd.read_excel(file, sheet_name=sheet_name, skipfooter=2)  # Ignora linhas extras no final
+    return pd.read_excel(file, sheet_name=sheet_name, skipfooter=2)
 
-# Streamlit - Interface do Dashboard
-st.markdown("<h1 style='text-align: center;'>Análise de Adesões à A3P</h1>", unsafe_allow_html=True)
-
-# Nome da aba fixa e arquivo
-sheet_name = "Adesões à A3P"
 uploaded_file = "Adesões à A3P - Banco de Dados 3 - Davi.xlsx"
+sheet_name = "Adesões à A3P"
 
-# Carregar os dados
 try:
-    data = load_data(uploaded_file, sheet_name=sheet_name)
-except FileNotFoundError:
-    st.error(f"Arquivo '{uploaded_file}' não encontrado. Verifique o caminho e tente novamente.")
-    st.stop()
-except ValueError:
-    st.error(f"A aba '{sheet_name}' não foi encontrada no arquivo. Verifique o nome da aba e tente novamente.")
+    data = load_data(uploaded_file, sheet_name)
+except Exception as e:
+    st.error(f"Erro ao carregar dados: {e}")
     st.stop()
 
-# Validar a existência de colunas relevantes
-required_columns = ["Poder", "Esfera", "UF", "Início da Vigência", "Final da Vigência"]
-if not all(column in data.columns for column in required_columns):
-    st.error(f"As colunas necessárias {required_columns} não foram encontradas nos dados. Verifique o arquivo e tente novamente.")
-    st.stop()
-
-# Remover duplicatas
+# ============================
+# Pré-processamento
+# ============================
 data = data.drop_duplicates()
-
-# Padronizar textos para evitar dupla contagem
 data['Esfera'] = data['Esfera'].str.strip().str.title()
 data['Poder'] = data['Poder'].str.strip().str.title()
-
-# Converter colunas de datas
+data['UF'] = data['UF'].str.upper().str.strip()
 data['Início da Vigência'] = pd.to_datetime(data['Início da Vigência'], errors='coerce')
 data['Final da Vigência'] = pd.to_datetime(data['Final da Vigência'], errors='coerce')
 
-# Criar coluna de vigência
 hoje = pd.Timestamp.today().normalize()
-data['Vigente'] = data['Final da Vigência'].apply(
-    lambda x: x >= hoje if pd.notnull(x) else False
-)
+data['Vigente'] = data['Final da Vigência'].apply(lambda x: x >= hoje if pd.notnull(x) else False)
 
-# Contar o número de registros por "Poder" e "Esfera"
-grouped_data = data[data['Vigente']].groupby(["Poder", "Esfera"]).size().reset_index(name="Total")
+ufs_validas = sorted(data['UF'].dropna().unique())
 
-# Filtros interativos na sidebar
+# ============================
+# Filtros Gerais
+# ============================
 st.sidebar.header("Filtros")
-selected_power = st.sidebar.selectbox("Selecione um Poder", grouped_data["Poder"].unique(), index=1)
-selected_sphere = st.sidebar.selectbox("Selecione uma Esfera", grouped_data["Esfera"].unique(), index=0)
+filtrar_vigente = st.sidebar.checkbox("Somente vigentes", value=True)
+filtro_poder = st.sidebar.multiselect("Poder", options=sorted(data['Poder'].dropna().unique()))
+filtro_esfera = st.sidebar.multiselect("Esfera", options=sorted(data['Esfera'].dropna().unique()))
+filtro_uf = st.sidebar.multiselect("Estado (UF)", options=ufs_validas)
 
-# Filtrar dados com base na seleção
-filtered_data = grouped_data[
-    (grouped_data["Poder"] == selected_power) & (grouped_data["Esfera"] == selected_sphere)
-]
+# ============================
+# Aplicação dos Filtros
+# ============================
+df_filtrado = data.copy()
+if filtrar_vigente:
+    df_filtrado = df_filtrado[df_filtrado['Vigente']]
+if filtro_poder:
+    df_filtrado = df_filtrado[df_filtrado['Poder'].isin(filtro_poder)]
+if filtro_esfera:
+    df_filtrado = df_filtrado[df_filtrado['Esfera'].isin(filtro_esfera)]
+if filtro_uf:
+    df_filtrado = df_filtrado[df_filtrado['UF'].isin(filtro_uf)]
 
-# Exibir dados filtrados na sidebar
-st.sidebar.subheader("Dados Filtrados:")
-st.sidebar.dataframe(
-    filtered_data[["Poder", "Esfera", "Total"]],
-    hide_index=True,
-    use_container_width=True
+# ============================
+# KPIs
+# ============================
+st.subheader("Visão Geral")
+k1, k2, k3 = st.columns(3)
+k1.metric("Adesões Totais", df_filtrado.shape[0])
+k2.metric("Adesões Vigentes", df_filtrado[df_filtrado['Vigente']].shape[0])
+k3.metric("Estados com Adesão", df_filtrado['UF'].nunique())
+
+# ============================
+# Contagem por UF
+# ============================
+st.subheader("Contagem de Instituições por UF")
+contagem_uf = df_filtrado.groupby("UF").size().reset_index(name="Total Instituições")
+contagem_uf = contagem_uf.sort_values(by="Total Instituições", ascending=False)
+st.dataframe(contagem_uf, use_container_width=True, hide_index=True)
+
+# ============================
+# Gráfico de Mapa
+# ============================
+st.subheader("Mapa de Adesões por Estado")
+brazil_geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+map_data = df_filtrado.groupby("UF").size().reset_index(name="Total")
+
+fig_mapa = px.choropleth(
+    map_data,
+    geojson=brazil_geojson_url,
+    locations="UF",
+    featureidkey="properties.sigla",
+    color="Total",
+    color_continuous_scale="Blues",
+    scope="south america",
+    labels={"Total": "Número de Adesões"},
+    height=600
+)
+fig_mapa.update_layout(
+    margin=dict(l=0, r=0, t=0, b=0),
+    coloraxis_colorbar=dict(
+        thickness=10,
+        len=0.5,
+        yanchor='middle',
+        y=0.5,
+        xanchor='left',
+        x=1.05
+    )
+)
+st.plotly_chart(fig_mapa, use_container_width=True)
+
+# ============================
+# Gráfico de Linha: Adesões Vigentes ao Longo do Tempo
+# ============================
+st.subheader("Adesões Vigentes ao Longo do Tempo")
+filtered_dates = df_filtrado.dropna(subset=["Início da Vigência", "Final da Vigência"]).copy()
+filtered_dates["Final da Vigência"] = filtered_dates["Final da Vigência"].apply(lambda x: min(x, hoje))
+
+date_range = pd.date_range(
+    start=filtered_dates["Início da Vigência"].min(),
+    end=hoje,
+    freq='D'
 )
 
-# Função para atualizar gráficos com base no estado selecionado
-def update_charts(selected_state):
-    # Filtrar dados para o estado selecionado
-    state_data = data[data["UF"] == selected_state]
+vigentes_por_dia = np.array([
+    ((filtered_dates["Início da Vigência"] <= dia) & (filtered_dates["Final da Vigência"] >= dia)).sum()
+    for dia in date_range
+])
 
-    # Verificar dados
-    grouped_esfera = state_data.groupby("Esfera").size().reset_index(name="Total")
-    grouped_esfera["Total"] = grouped_esfera["Total"].astype(int)  # Converter para inteiro
+vigentes_df = pd.DataFrame({"Data": date_range, "Adesões Vigentes": vigentes_por_dia})
+vigentes_trimestre = vigentes_df.resample('Q', on='Data').max().reset_index()
 
-    # Gráfico de Pizza com Plotly Express
-    fig_pizza = px.pie(
-        grouped_esfera,
-        values="Total",
-        names="Esfera",
-        title=f"Adesões por Esfera - {selected_state}",
-        hole=0.4,
-        height=550,
-        width=800
-    )
-    fig_pizza.update_traces(
-        texttemplate='%{label}<br>%{value:.0f}',  # Valor como inteiro
-        textfont=dict(size=14),
-        textinfo='none',  # Remove percentuais padrão
-        hovertemplate="<b>%{label}</b><br>Total: %{value}<br>Percentual: %{percent}<extra></extra>"
-    )
-    fig_pizza.update_layout(title=dict(font=dict(size=20)))
+fig_linha = px.line(
+    vigentes_trimestre,
+    x="Data",
+    y="Adesões Vigentes",
+    markers=True,
+    title=f"Adesões Vigentes até {hoje.strftime('%d/%m/%Y')}",
+    labels={"Adesões Vigentes": "Adesões Vigentes"},
+    height=500
+)
+st.plotly_chart(fig_linha, use_container_width=True)
 
-    # Gráfico de Barras Horizontais
-    fig_barra = px.bar(
-        state_data.groupby("Poder").size().reset_index(name="Total"),
-        x="Total",
-        y="Poder",
-        orientation="h",
-        text="Total",
-        title=f"Adesões por Poder - {selected_state}",
-        labels={"Total": "Quantidade", "Poder": "Poder"},
-        height=550,
-        width=800
-    )
-    fig_barra.update_traces(textposition="outside", textfont=dict(size=14))
-    fig_barra.update_layout(
-        title=dict(font=dict(size=20)),
-        xaxis=dict(title_font=dict(size=16), tickfont=dict(size=14)),
-        yaxis=dict(title_font=dict(size=16), tickfont=dict(size=14))
-    )
+# ============================
+# Gráfico de Pizza por Esfera
+# ============================
+st.subheader("Distribuição por Esfera")
+group_esfera = df_filtrado.groupby("Esfera").size().reset_index(name="Total")
+fig_pie = px.pie(group_esfera, values="Total", names="Esfera", hole=0.4)
+fig_pie.update_traces(
+    texttemplate='%{label}<br>%{value}',
+    hovertemplate="<b>%{label}</b><br>Total: %{value}<br>%{percent}<extra></extra>",
+    textfont=dict(size=14)
+)
+st.plotly_chart(fig_pie, use_container_width=True)
 
-    return fig_pizza, fig_barra
+# ============================
+# Gráfico de Barras por Poder
+# ============================
+st.subheader("Distribuição por Poder")
+group_poder = df_filtrado.groupby("Poder").size().reset_index(name="Total")
+fig_bar = px.bar(group_poder, x="Total", y="Poder", orientation="h", text="Total")
+fig_bar.update_layout(xaxis_title="Quantidade", yaxis_title="Poder")
+fig_bar.update_traces(textposition="outside")
+st.plotly_chart(fig_bar, use_container_width=True)
 
-# =============================================
-# NOVA ESTRUTURA PARA ORDENAÇÃO DOS GRÁFICOS
-# =============================================
+# ============================
+# Gráfico de Municípios com filtro por UF e detalhes
+# ============================
+st.subheader("Top Municípios com Mais Adesões")
 
-# 1. Gráfico de Mapa em full width
-# ---------------------------------
-with st.container():
-    # Reduzir o espaço acima do título do mapa
-    st.markdown("<div style='margin-top: -20px;'></div>", unsafe_allow_html=True)
+if "Cidade " in df_filtrado.columns:
+    df_municipios = df_filtrado.copy()
+    df_municipios["Cidade "] = df_municipios["Cidade "].astype(str).str.strip().str.title()
 
-    # Criar colunas para mapa e seleção de estado
-    mapa_col, filtro_col = st.columns([4, 1])  # 75% mapa, 25% seleção
+    uf_municipio = st.selectbox("Selecione um estado para visualizar os municípios:", options=ufs_validas)
+    municipios_filtrados = df_municipios[df_municipios["UF"] == uf_municipio]
 
-    with mapa_col:
-        brazil_geojson_url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
-        state_data = data.groupby("UF").size().reset_index(name="Total")
+    municipios_count = municipios_filtrados.groupby("Cidade ").size().reset_index(name="Total Instituições")
+    municipios_count = municipios_count.sort_values(by="Total Instituições", ascending=False).head(20)
 
-        valid_ufs = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR",
-                     "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]
-        state_data["UF"] = state_data["UF"].str.upper().str.strip()
-        state_data = state_data[state_data["UF"].isin(valid_ufs)]
+    if not municipios_count.empty:
+        fig_mun = px.bar(
+            municipios_count,
+            x="Total Instituições",
+            y="Cidade ",
+            orientation="h",
+            title=f"Top 20 Municípios com Mais Adesões - {uf_municipio}",
+            text="Total Instituições"
+        )
+        fig_mun.update_traces(textposition="outside")
+        fig_mun.update_layout(yaxis_title="Município", xaxis_title="Total de Instituições")
+        st.plotly_chart(fig_mun, use_container_width=True)
 
-        if not state_data.empty:
-            fig_mapa = px.choropleth(
-                state_data,
-                geojson=brazil_geojson_url,
-                locations="UF",
-                featureidkey="properties.sigla",
-                color="Total",
-                color_continuous_scale="Blues",
-                scope="south america",
-                labels={"Total": "Número de Adesões"},
-                height=700,
-                width=1200
-            )
+        # Novo: seleção de município
+        municipio_selecionado = st.selectbox(
+            "Selecione um município para ver detalhes:",
+            options=municipios_count["Cidade "].tolist()
+        )
 
-            fig_mapa.update_layout(
-                margin=dict(l=0, r=100, t=0, b=0),
-                height=600,
-                coloraxis_colorbar=dict(
-                    thickness=10,
-                    len=0.5,
-                    title=None,
-                    yanchor='middle',
-                    y=0.5,
-                    xanchor='left',
-                    x=1.05
-                )
-            )
-
-            st.plotly_chart(fig_mapa, use_container_width=True)
-
-# 2. Gráfico de Linha em full width
-# ---------------------------------
-with st.container():
-    # Gráfico de Linha - Adesões Vigentes ao Longo do Tempo
-    st.subheader("Adesões Vigentes ao Longo do Tempo (Até Hoje)")
-
-    # Filtrar dados válidos e ajustar "Final da Vigência" para hoje se for futuro
-    filtered_data = data.dropna(subset=["Início da Vigência", "Final da Vigência"]).copy()
-
-    # Aplicar filtro de estado, se um estado foi selecionado
-    if st.session_state["map_click_data"]:
-        filtered_data = filtered_data[filtered_data["UF"] == st.session_state["map_click_data"]]
-
-    # Ajustar "Final da Vigência" para não ultrapassar hoje
-    filtered_data["Final da Vigência"] = filtered_data["Final da Vigência"].apply(
-        lambda x: min(x, hoje)  # Cap final date at today
-    )
-
-    # Criar intervalo de datas até hoje
-    date_range = pd.date_range(
-        start=filtered_data["Início da Vigência"].min(),
-        end=hoje,
-        freq='D'
-    )
-
-    # Calcular adesões vigentes por dia
-    vigentes_por_dia = []
-    for dia in date_range:
-        # Contar apenas as adesões que estavam vigentes naquele dia
-        vigentes = filtered_data[
-            (filtered_data["Início da Vigência"] <= dia) &
-            (filtered_data["Final da Vigência"] >= dia)
-            ].shape[0]
-        vigentes_por_dia.append(vigentes)
-
-    vigentes_df = pd.DataFrame({"Data": date_range, "Adesões Vigentes": vigentes_por_dia})
-
-    # Agrupar por trimestre usando o MÁXIMO de adesões vigentes no trimestre
-    vigentes_por_trimestre = vigentes_df.resample('Q', on='Data').max().reset_index()
-
-    # Gráfico de Linha
-    fig_linha = px.line(
-        vigentes_por_trimestre,
-        x="Data",
-        y="Adesões Vigentes",
-        title=f"Adesões Vigentes até {hoje.strftime('%d/%m/%Y')} - Estado: {st.session_state['map_click_data'] if st.session_state['map_click_data'] else 'Todos'}",
-        markers=True,
-        labels={"Adesões Vigentes": "Adesões Vigentes"},
-        height=550
-    )
-    st.plotly_chart(fig_linha, use_container_width=True)
-
-# 3. Caixa de Filtros e Número de Adesões
-# ---------------------------------------
-with st.container():
-    st.subheader("Filtros e Resultados")
-
-    # Criar colunas para filtros e número de adesões
-    filtro_col, adesao_col = st.columns([2, 1])
-
-    with filtro_col:
-        # Caixa de seleção de estado
-        estado_selecionado = st.selectbox("Selecione um estado", valid_ufs, index=0, key="state_select")
-        if st.button("Aplicar seleção"):
-            st.session_state["map_click_data"] = estado_selecionado
-            st.success(f"Estado selecionado: {estado_selecionado}")
-
-    with adesao_col:
-        # Exibir número de adesões
-        if st.session_state["map_click_data"]:
-            estado_info = state_data[state_data["UF"] == st.session_state["map_click_data"]]
-            if not estado_info.empty:
-                st.metric(
-                    label="Total de Adesões",
-                    value=estado_info['Total'].values[0]
-                )
-            else:
-                st.warning("Nenhum dado encontrado para o estado selecionado.")
-        else:
-            st.info("Selecione um estado para ver o total de adesões.")
-
-# 4. Gráficos Secundários em Colunas
-# ----------------------------------
-
-# Primeiro gráfico de pizza (mantido igual)
-st.subheader("Distribuição de Adesões por Esfera")
-if st.session_state["map_click_data"]:
-    fig_pizza, _ = update_charts(st.session_state["map_click_data"])
+        dados_municipio = municipios_filtrados[municipios_filtrados["Cidade "] == municipio_selecionado]
+        st.markdown(f"### Instituições em *{municipio_selecionado} - {uf_municipio}*:")
+        st.dataframe(dados_municipio.sort_values("Início da Vigência"), use_container_width=True, hide_index=True)
+    else:
+        st.info(f"Nenhum município encontrado para o estado selecionado: {uf_municipio}")
 else:
-    grouped_esfera_global = data[data['Vigente']].groupby("Esfera").size().reset_index(name="Total")
-    grouped_esfera_global["Total"] = grouped_esfera_global["Total"].astype(int)
+    st.warning("A coluna 'Cidade ' não está presente no conjunto de dados.")
 
-    fig_pizza = px.pie(
-        grouped_esfera_global,
-        values="Total",
-        names="Esfera",
-        title="Adesões por Esfera (Total)",
-        hole=0.4,
-        height=550,
-        width=800
-    )
-    fig_pizza.update_traces(
-        texttemplate='%{label}<br>%{value:.0f}',
-        textfont=dict(size=14),
-        textinfo='none',
-        hovertemplate="<b>%{label}</b><br>Total: %{value}<br>Percentual: %{percent}<extra></extra>"
-    )
-    fig_pizza.update_layout(title=dict(font=dict(size=20)))
-
-st.plotly_chart(fig_pizza, use_container_width=True)
-
-# Segundo gráfico de pizza (novo)
-st.subheader(f"Distribuição de Adesões por Esfera no {selected_power}")
-
-# Novo gráfico de pizza para distribuição por Esfera dentro do Poder selecionado
-poder_data = grouped_data[grouped_data["Poder"] == selected_power]
-
-# Lista de cores verdes fortes e escuras
-cores_verdes_escuras = [
-    "#00441b",  # Verde muito escuro
-    "#006d2c",  # Verde escuro
-    "#238b45",  # Verde médio escuro
-    "#41ab5d",  # Verde médio
-    "#74c476",  # Verde claro
-    "#a1d99b",  # Verde mais claro
-]
-
-fig_pizza_poder = px.pie(
-    poder_data,
-    values="Total",
-    names="Esfera",
-    title=f"Esferas no {selected_power}",
-    hole=0.4,
-    height=550,
-    width=800,
-    color_discrete_sequence=cores_verdes_escuras  # Usando a lista personalizada
+# ============================
+# Botão de download dos dados filtrados
+# ============================
+st.download_button(
+    label="📥 Baixar dados filtrados",
+    data=df_filtrado.to_csv(index=False).encode("utf-8"),
+    file_name="dados_filtrados.csv",
+    mime="text/csv"
 )
-fig_pizza_poder.update_traces(
-    texttemplate='%{label}<br>%{value:.0f}',
-    textfont=dict(size=14),
-    textinfo='none',
-    hovertemplate="<b>%{label}</b><br>Total: %{value}<br>Percentual: %{percent}<extra></extra>"
-)
-fig_pizza_poder.update_layout(title=dict(font=dict(size=20)))
-
-st.plotly_chart(fig_pizza_poder, use_container_width=True)
